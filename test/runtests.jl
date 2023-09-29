@@ -11,7 +11,7 @@ function have_nats()
     try
         Sockets.getaddrinfo(NATS.NATS_HOST)
         nc = NATS.connect()
-        sleep(5)
+        sleep(10)
         @assert nc.status == NATS.CONNECTED
         @info "NATS avaliable, running connected tests."
         true
