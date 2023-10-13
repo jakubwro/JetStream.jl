@@ -1,5 +1,7 @@
 module JetStream
 
+using Dates
+using StructTypes
 using Random
 using JSON3
 
@@ -14,6 +16,6 @@ include("show.jl")
 include("convert.jl")
 include("worker.jl")
 
-export StreamConfiguration, stream_create, limits, interest, workqueue, memory, file
+export StreamConfiguration, stream_create, limits, interest, workqueue, memory, file, NATS
 
 end
