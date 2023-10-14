@@ -8,6 +8,15 @@ using JSON3
 import NATS
 using NATS: isdrained
 
+abstract type JetStreamPayload end
+
+@enum SteramRetentionPolicy limits interest workqueue
+@enum StreamStorage file memory
+@enum StreamCompression none s2
+@enum AckPolicy all explicit
+@enum ConsumerReplayPolicy instant original
+
+include("structs.jl")
 include("validate.jl")
 include("stream.jl")
 include("consumer.jl")
