@@ -9,8 +9,8 @@ using Random
         name = "SOME_STREAM",
         description = "SOME_STREAM stream",
         subjects = ["SOME_STREAM.*"],
-        retention = workqueue,
-        storage = memory,
+        retention = :workqueue,
+        storage = :memory,
         connection = connection)
     @test did_create
     names = JetStream.stream_names(; connection, subject = "SOME_STREAM.*")
@@ -49,20 +49,20 @@ end
         name = stream_name,
         description = "Test generated stream.",
         subjects = ["$subject_prefix.*"],
-        retention = limits,
-        storage = memory)
+        retention = :limits,
+        storage = :memory)
 
     @test did_create
 
-    publish("$subject_prefix.test", "Publication 1"; connection)
-    publish("$subject_prefix.test", "Publication 2"; connection)
-    publish("$subject_prefix.test", "Publication 3"; connection)
+    NATS.publish("$subject_prefix.test", "Publication 1"; connection)
+    NATS.publish("$subject_prefix.test", "Publication 2"; connection)
+    NATS.publish("$subject_prefix.test", "Publication 3"; connection)
 
     consumer = JetStream.consumer_create(
         stream_name;
         connection,
-        filter_subject="$subject_prefix.*",
-        ack_policy = "explicit",
+        filter_subjects=["$subject_prefix.*"],
+        ack_policy = :explicit,
         name ="c1")
     
     msg = JetStream.next(stream_name, consumer; connection)
@@ -85,13 +85,13 @@ end
 
     msg = NATS.Msg("FOO.BAR", "9", "ack_subject", 11, "Hello World")
     c = Channel(10)
-    sub = subscribe("ack_subject") do msg
+    sub = subscribe("ack_subject"; connection) do msg
         put!(c, msg)
     end
     JetStream.ack(msg; connection)
     JetStream.nak(msg; connection)
     sleep(0.5)
-    unsubscribe(sub)
+    unsubscribe(sub; connection)
     close(c)
     acks = collect(c)
     @test length(acks) == 2

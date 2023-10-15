@@ -17,16 +17,16 @@ using Random
         name = stream_name,
         description = "Work queue stream.",
         subjects = ["$subject_prefix.*"],
-        retention = workqueue,
-        storage = memory)
+        retention = :workqueue,
+        storage = :memory)
 
     @test did_create
 
     consumer = JetStream.consumer_create(
         stream_name;
         connection,
-        filter_subject="$subject_prefix.*",
-        ack_policy = "explicit",
+        filter_subjects=["$subject_prefix.*"],
+        ack_policy = :explicit,
         name ="workqueue_consumer")
 
     n_workers = 3

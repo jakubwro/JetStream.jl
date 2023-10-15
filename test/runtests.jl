@@ -9,7 +9,7 @@ using JetStream
 
 function have_nats()
     try
-        Sockets.getaddrinfo(NATS.NATS_HOST)
+        Sockets.getaddrinfo(get(ENV, "NATS_HOST", "localhost"))
         nc = NATS.connect()
         sleep(10)
         @assert nc.status == NATS.CONNECTED

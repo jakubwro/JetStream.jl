@@ -77,7 +77,7 @@ end
     "Subject transform to apply to matching messages"
     subject_transform::Union{SubjectTransform, Nothing} = nothing
     "How messages are retained in the Stream, once this is exceeded old messages are removed."
-    retention::SteramRetentionPolicy = limits
+    retention::Symbol = :limits
     "How many Consumers can be defined for a given Stream. -1 for unlimited."
     max_consumers::Int64 = -1
     "How many messages may be in a Stream, oldest messages will be removed if the Stream exceeds this size. -1 for unlimited."
@@ -91,9 +91,9 @@ end
     "The largest message that will be accepted by the Stream. -1 for unlimited."
     max_msg_size::Union{Int32, Nothing} = nothing
     "The storage backend to use for the Stream."
-    storage::StreamStorage = file
+    storage::Symbol = :file
     "Optional compression algorithm used for the Stream."
-    compression::Union{StreamCompression, Nothing} = nothing
+    compression::Symbol = :none
     "A custom sequence to use for the first message in the stream"
     first_seq::Union{UInt64, Nothing} = nothing
     "How many replicas to keep for each message."
@@ -218,6 +218,13 @@ end
     sources::Union{Vector{StreamSourceInfo}, Nothing} = nothing
     "List of mirrors sorted by priority"
     alternates::Union{Vector{StreamAlternate}, Nothing} = nothing
+end
+
+@kwdef struct PubAck
+    stream::String
+    seq::Union{Int64, Nothing}
+    duplicate::Union{Bool, Nothing}
+    domain::Union{String, Nothing}
 end
 
 function validate(stream_configuration::StreamConfiguration)

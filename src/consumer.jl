@@ -9,7 +9,7 @@ const DEFAULT_NEXT_TIMEOUT_SECONDS = 5
     "A short description of the purpose of this consumer"
     description::Union{String, Nothing} = nothing
     deliver_subject::Union{String, Nothing} = nothing
-    ack_policy::String = "none" # TODO: enum
+    ack_policy::Symbol = :none
     "How long (in nanoseconds) to allow messages to remain un-acknowledged before attempting redelivery"
     ack_wait::Union{Int64, Nothing} = 30000000000
     "The number of times a message will be redelivered to consumers if not acknowledged in time"
@@ -19,7 +19,7 @@ const DEFAULT_NEXT_TIMEOUT_SECONDS = 5
     # filter_subject::Union{String, Nothing} = nothing
     "Filter the stream by multiple subjects"
     filter_subjects::Union{Vector{String}, Nothing} = nothing
-    replay_policy::ConsumerReplayPolicy = instant
+    replay_policy::Symbol = :instant
     sample_freq::Union{String, Nothing} = nothing
     "The rate at which messages will be delivered to clients, expressed in bit per second"
     rate_limit_bps::Union{UInt64, Nothing} = nothing
@@ -125,7 +125,7 @@ function next(stream::String, consumer::String; timer = Timer(DEFAULT_NEXT_TIMEO
     #     NATS.request(connection, "\$JS.API.CONSUMER.MSG.NEXT.$stream.$consumer", "{\"no_wait\": true}")
     # else
     #     NATS.request(connection, "\$JS.API.CONSUMER.MSG.NEXT.$stream.$consumer"; timer)
-    # end
+    # end 
 end
 
 # function next(n::Int64, stream::String, consumer::String; connection::NATS.Connection)
