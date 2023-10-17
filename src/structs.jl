@@ -33,7 +33,7 @@ end
     "Sequence to start replicating from"
     opt_start_seq::Union{UInt64, Nothing} = nothing
     "Time stamp to start replicating from"
-    opt_start_time::Union{DateTime, Nothing} = nothing
+    opt_start_time::Union{NanoDate, Nothing} = nothing
     "Replicate only a subset of messages based on filter"
     filter_subject::Union{String, Nothing} = nothing
     "The subject filtering sources and associated destination transforms"
@@ -139,11 +139,11 @@ end
     "Sequence number of the first message in the Stream"
     first_seq::UInt64
     "The timestamp of the first message in the Stream"
-    first_ts::Union{DateTime, Nothing} = nothing
+    first_ts::Union{NanoDate, Nothing} = nothing
     "Sequence number of the last message in the Stream"
     last_seq::UInt64
     "The timestamp of the last message in the Stream"
-    last_ts::Union{DateTime, Nothing} = nothing
+    last_ts::Union{NanoDate, Nothing} = nothing
     "IDs of messages that were deleted using the Message Delete API or Interest based streams removing messages out of order"
     deleted::Union{Vector{UInt64}, Nothing} = nothing
     # "Subjects and their message counts when a subjects_filter was set"
@@ -207,11 +207,11 @@ end
     "The active configuration for the Stream"
     config::StreamConfiguration
     "Detail about the current State of the Stream"
-    state::Any
+    state::StreamState
     "Timestamp when the stream was created"
-    created::DateTime
+    created::NanoDate
     "The server time the stream info was created"
-    ts::Union{DateTime, Nothing} = nothing
+    ts::Union{NanoDate, Nothing} = nothing
     cluster::Union{ClusterInfo, Nothing} = nothing
     mirror::Union{StreamSourceInfo, Nothing} = nothing
     "Streams being sourced into this Stream"
@@ -283,7 +283,7 @@ end
     "The sequence number of the Stream"
     stream_seq::UInt64
     "The last time a message was delivered or acknowledged (for ack_floor)"
-    last_active::Union{DateTime, Nothing} = nothing
+    last_active::Union{NanoDate, Nothing} = nothing
 end
 
 @kwdef struct ConsumerInfo
@@ -292,10 +292,10 @@ end
     "A unique name for the consumer, either machine generated or the durable name"
     name::String
     "The server time the consumer info was created"
-    ts::Union{DateTime, Nothing} = nothing
+    ts::Union{NanoDate, Nothing} = nothing
     config::ConsumerConfiguration
     "The time the Consumer was created"
-    created::DateTime
+    created::NanoDate
     "The last message delivered from this Consumer"
     delivered::SequenceInfo
     "The highest contiguous acknowledged message"

@@ -46,13 +46,25 @@ function stream_delete(; connection::NATS.Connection, name::String)
     resp.success
 end
 
+function stream_info(name::String; deleted_details = false, subjects_filter::Union{String, Nothing} = nothing, connection::NATS.Connection)
+    validate_name(name)
+    msg = NATS.request("\$JS.API.STREAM.INFO.$(name)"; connection)
+    resp = NATS.payload(msg)
+    resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
+    json = JSON3.read(resp)
+    throw_on_api_error(json)
+    JSON3.read(JSON3.write(json), StreamInfo)
+end
+
 function stream_list(; connection::NATS.Connection)
-    resp = NATS.request(JSON3.Object, "\$JS.API.STREAM.LIST"; connection)
-    throw_on_api_error(resp)
-    resp.streams
-    # map(resp.streams) do s
-    #     JSON3.read(JSON3.write(s), StreamInfo)
-    # end 
+    msg = NATS.request("\$JS.API.STREAM.LIST"; connection)
+    resp = NATS.payload(msg)
+    resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
+    json = JSON3.read(resp)
+    throw_on_api_error(json)
+    map(json.streams) do s
+        JSON3.read(JSON3.write(s), StreamInfo)
+    end 
 end
 
 function stream_names(; subject = nothing, connection::NATS.Connection, timer = Timer(5))

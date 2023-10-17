@@ -2,7 +2,7 @@
 
 julia_version = "1.9.3"
 manifest_format = "2.0"
-project_hash = "5b860218018709e0b4a339e1bc89c2d3c0bdff94"
+project_hash = "37bd5af2114a3b904f80a41934a59c7b306c724e"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -135,6 +135,12 @@ repo-rev = "main"
 repo-url = "https://github.com/jakubwro/NATS.jl.git"
 uuid = "55e73f9c-eeeb-467f-b4cc-a633fde63d2a"
 version = "0.1.0"
+
+[[deps.NanoDates]]
+deps = ["Dates", "Parsers"]
+git-tree-sha1 = "382971d0eaee7e6d8f86a8c418fff149d66e7fdb"
+uuid = "46f1a544-deae-4307-8689-c12aa3c955c6"
+version = "0.3.3"
 
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"

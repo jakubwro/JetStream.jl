@@ -1,6 +1,7 @@
 module JetStream
 
 using Dates
+using NanoDates
 using StructTypes
 using Random
 using JSON3

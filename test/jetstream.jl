@@ -25,8 +25,8 @@ end
     connection = NATS.connect()
     @test_throws ErrorException JetStream.stream_names(; connection, timer = Timer(0))
 
-    response = JSON3.read("""{"error": {"description": "failed"}}""")
-    @test_throws ErrorException JetStream.throw_on_api_error(response, "Error")
+    response = JSON3.read("""{"error": {"code": 400, "description": "failed"}}""")
+    @test_throws JetStream.ApiError JetStream.throw_on_api_error(response)
 end
 
 @testset "Invalid stream name." begin
