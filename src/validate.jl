@@ -9,3 +9,9 @@ function validate_name(name::String)
     end
     true
 end
+
+function validate(stream_configuration::StreamConfiguration)
+    validate_name(stream_configuration.name)
+    stream_configuration.retention in STREAM_RETENTION_OPTIONS || error("Invalid `retention = :$(stream_configuration.retention)`, expected one of $STREAM_RETENTION_OPTIONS") 
+    true
+end

@@ -1,28 +1,23 @@
 
-function check_x(s, e)
-    @show e
-    true
+function _try_request(subject, data; connection)
+    replies = NATS.request(subject, data, 1; connection)
+    isempty(replies) && error("No `ack` received.")
+    only(replies)
 end
 
-function publish(subject, data; delays = [1,1,1])
-    resp = NATS.request(subject, data, 1)
-
-    if isempty(resp)
-        error("No `ack` received.")
-        # TODO: add hint: For streams that have `no_ack` enabled use `NATS.publish` instead of `JetStream.publish`
-    end
-
-    msg = only(resp)
-
-    if NATS.statuscode(msg) == 503
-        error("No responders.") # TODO: retry like in delays
+function publish(subject, data; delays = [1,1,1], connection::NATS.Connection = NATS.connection(:default))
+    ack_msg = _try_request(subject, data; connection)
+    if NATS.statuscode(ack_msg) == 503
         for delay in delays
             sleep(delay)
-            resp = NATS.request(subject, data, 1)
-            msg = only(resp)
-            NATS.statuscode(msg) == 503 || break
+            ack_msg == _try_request(subject, data; connection)
+            NATS.statuscode(ack_msg) == 503 || break
         end
     end
 
-    JSON3.read(NATS.payload(msg), PubAck)
+    if NATS.statuscode(ack_msg) >= 400
+        error("No ack") # TODO: better error handling
+    end
+
+    JSON3.read(NATS.payload(ack_msg), PubAck)
 end
