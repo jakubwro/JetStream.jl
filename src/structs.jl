@@ -15,7 +15,7 @@ end
 end
 @kwdef struct Placement
     "The desired cluster name to place the stream"
-    cluster::String
+    cluster::Union{String, Nothing}
     "Tags required on servers hosting this stream"
     tags::Union{Vector{String}, Nothing} = nothing
 end
@@ -101,7 +101,7 @@ end
     "Disables acknowledging messages that are received by the Stream."
     no_ack::Union{Bool, Nothing} = nothing
     "When a Stream reach it's limits either old messages are deleted or new ones are denied"
-    discard::Union{String, Nothing} = nothing
+    discard::Union{Symbol, Nothing} = nothing
     "The time window to track duplicate messages for, expressed in nanoseconds. 0 for default"
     duplicate_window::Union{Int64, Nothing} = nothing
     "Placement directives to consider when placing replicas of this stream, random placement when unset"
@@ -313,3 +313,15 @@ end
     push_bound::Union{Bool, Nothing} = nothing
 end
 
+@kwdef struct StoredMessage
+    "The subject the message was originally received on"
+    subject::String
+    "The sequence number of the message in the Stream"
+    seq::UInt64
+    "The base64 encoded payload of the message body"
+    data::Union{String, Nothing} = nothing
+    "The time the message was received"
+    time::String
+    "Base64 encoded headers for the message"
+    hdrs::Union{String, Nothing} = nothing
+end

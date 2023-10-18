@@ -75,3 +75,25 @@ function stream_names(; subject = nothing, connection::NATS.Connection, timer = 
     #TODO: pagination
     @something resp.streams String[]
 end
+
+function stream_msg_get_direct(stream_name::String, subject::String; connection = NATS.connection(:default))
+    replies = NATS.request("\$JS.API.DIRECT.GET.$stream_name.$subject", nothing, 1; connection)
+    isempty(replies) && error("No replies.")
+    first(replies)
+end
+
+function stream_msg_get(stream_name::String, subject::String; connection = NATS.connection(:default))
+    replies = NATS.request("\$JS.API.STREAM.MSG.GET.$stream_name", "{\"last_by_subj\": \"\$KV.asdf.$subject\"}", 1; connection)
+    isempty(replies) && error("No replies.")
+    first(replies)
+end
+
+function stream_msg_delete(stream_name::String, seq::UInt64; connection = NATS.connection(:default))
+    replies = NATS.request("\$JS.API.STREAM.MSG.DELETE.$stream_name", "{\"seq\": \"\$KV.asdf.$subject\"}", 1; connection)
+    isempty(replies) && error("No replies.")
+    first(replies)
+end
+
+function stream_purge(stream_name::String; connection = NATS.connection(:default))
+    replies = NATS.request("\$JS.API.STREAM.PURGE.$stream_name", nothing, 1; connection)
+end
