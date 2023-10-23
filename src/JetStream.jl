@@ -10,7 +10,7 @@ import NATS
 using NATS: isdrained
 
 import Base: show, showerror
-import Base: setindex!, getindex, empty!, delete!
+import Base: setindex!, getindex, empty!, delete!, iterate, length
 
 abstract type JetStreamPayload end
 
