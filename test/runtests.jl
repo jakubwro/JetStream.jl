@@ -24,4 +24,5 @@ end
 if have_nats()
     include("jetstream.jl")
     include("worker.jl")
+    include("keyvalue.jl")
 end

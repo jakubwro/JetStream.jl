@@ -91,7 +91,6 @@ end
 function setindex!(kv::KeyValue, value, key::String)
     validate_key(key)
     ack = publish("\$KV.$(kv.bucket).$key", value; connection = kv.connection)
-    @show ack
     # TODO: validate puback
     kv
 end
@@ -100,7 +99,6 @@ function setindex!(kv::KeyValue, value, key::String, revision::UInt64)
     validate_key(key)
     hdrs = ["Nats-Expected-Last-Subject-Sequence" => string(revision)]
     ack = publish("\$KV.$(kv.bucket).$key", (value, hdrs); connection = kv.connection)
-    @show ack
     if ack.seq == 0
         error("Update failed, seq do not match. Please retry.")
     end
