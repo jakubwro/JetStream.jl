@@ -29,6 +29,8 @@ struct KeyValue{TValue} <: AbstractDict{String, TValue}
     value_type::DataType
 end
 
+connection(kv::KeyValue) = kv.connection
+    
 function KeyValue{T}(bucket::String; connection::NATS.Connection = NATS.connection(:default)) where T
     NATS.find_msg_conversion_or_throw(T)
     NATS.find_data_conversion_or_throw(T)
@@ -90,7 +92,7 @@ end
 
 function setindex!(kv::KeyValue, value, key::String)
     validate_key(key)
-    ack = publish("\$KV.$(kv.bucket).$key", value; connection = kv.connection)
+    ack = publish("\$KV.$(kv.bucket).$key", value; connection = connection(kv))
     # TODO: validate puback
     kv
 end
@@ -98,7 +100,7 @@ end
 function setindex!(kv::KeyValue, value, key::String, revision::UInt64)
     validate_key(key)
     hdrs = ["Nats-Expected-Last-Subject-Sequence" => string(revision)]
-    ack = publish("\$KV.$(kv.bucket).$key", (value, hdrs); connection = kv.connection)
+    ack = publish("\$KV.$(kv.bucket).$key", (value, hdrs); connection = connection(kv))
     if ack.seq == 0
         error("Update failed, seq do not match. Please retry.")
     end
@@ -111,7 +113,7 @@ const KV_REVISION_LATEST = 0
 #  revision::UInt64 = KV_REVISION_LATEST
 function getindex(kv::KeyValue, key::String, revision = KV_REVISION_LATEST)
     validate_key(key)
-    msg = stream_msg_get_direct("KV_$(kv.bucket)", "\$KV.$(kv.bucket).$key"; connection = kv.connection)
+    msg = stream_msg_get_direct("KV_$(kv.bucket)", "\$KV.$(kv.bucket).$key"; connection = connection(kv))
     status = NATS.statuscode(msg) 
     if status == 404
         throw(KeyError(key))
@@ -131,18 +133,18 @@ end
 function empty!(kv::KeyValue)
     # hdrs = [ "KV-Operation" => "PURGE" ]
     # ack = publish("\$KV.$(kv.bucket)", (nothing, hdrs); connection = kv.connection)
-    stream_purge(kv.stream_name; connection = kv.connection)
+    stream_purge(kv.stream_name; connection = connection(kv))
 end
 
 function delete!(kv::KeyValue, key::String)
     hdrs = [ "KV-Operation" => "DEL" ]
-    ack = publish("\$KV.$(kv.bucket).$key", (nothing, hdrs); connection = kv.connection)
+    ack = publish("\$KV.$(kv.bucket).$key", (nothing, hdrs); connection = connection(kv))
 end
 
 function iterate(kv::KeyValue)
-    cons = consumer_create("KV_$(kv.bucket)"; connection = kv.connection)
+    cons = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
     # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = kv.connection)
+    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = connection(kv))
     # @show msg
     msg = only(msg)
     NATS.statuscode(msg) == 404 && return nothing
@@ -160,7 +162,7 @@ end
 
 function iterate(kv::KeyValue, cons)
     # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = kv.connection, timer = Timer(0.5))
+    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = connection(kv), timer = Timer(0.5))
     if isempty(msg)
         @error "Consumer disapeared."
         return nothing
@@ -174,8 +176,8 @@ function iterate(kv::KeyValue, cons)
 end
 
 function length(kv::KeyValue)
-    consumer = consumer_create("KV_$(kv.bucket)"; connection = kv.connection)
-    replies = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$consumer", "{\"no_wait\": true}", 1; connection = kv.connection)
+    consumer = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
+    replies = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$consumer", "{\"no_wait\": true}", 1; connection = connection(kv))
     if isempty(replies)
         0
     else
