@@ -15,7 +15,7 @@ struct KeyValueEntry
     # Revision is a unique sequence for this value.
     revision::UInt64
     # Created is the time the data was put in the bucket.
-    created::NanoDate # DateTime
+    created::NanoDate
     # Delta is distance from the latest value.
     delta::UInt64
     # Operation returns Put or Delete or Purge.

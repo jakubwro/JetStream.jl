@@ -1,6 +1,7 @@
 using Test
 using JSON3
 using Sockets
+using Random
 
 using NATS
 using JetStream
