@@ -30,6 +30,7 @@ include("show.jl")
 include("convert.jl")
 include("worker.jl")
 include("publish.jl")
+include("init.jl")
 
 export PubAck, StreamConfiguration, stream_create, limits, interest, workqueue, memory, file, NATS, publish
 
