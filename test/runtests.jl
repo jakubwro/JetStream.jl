@@ -23,7 +23,7 @@ function have_nats()
 end
 
 if have_nats()
-    include("jetstream.jl")
-    include("worker.jl")
+    include("stream.jl")
     include("keyvalue.jl")
+    include("worker.jl")
 end

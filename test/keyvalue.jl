@@ -12,7 +12,6 @@
     end
 end
 
-
 @testset "Create and delete KV bucket" begin
     connection = NATS.connect()
     bucket = randstring(10)
