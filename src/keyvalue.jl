@@ -35,19 +35,13 @@ function KeyValue{T}(bucket::String; connection::NATS.Connection = NATS.connecti
     NATS.find_msg_conversion_or_throw(T)
     NATS.find_data_conversion_or_throw(T)
     try
-        stream_info("KV_$bucket"; connection)
+        JetStream.info(connection, "KV_$bucket")
         KeyValue{T}(connection, bucket, "KV_$bucket", T)
     catch err
-        if err isa ApiError && err.code == 404
-            @info "KV $bucket does not exists, creating now."
-            if keyvalue_create(bucket; connection)
-                KeyValue{T}(connection, bucket, "KV_$bucket", T)
-            else
-                error("Cannot create KV $bucket.")
-            end
-        else
-            rethrow()
-        end
+        (err isa ApiError && err.code == 404) || rethrow()
+        @info "KV $bucket does not exists, creating now."
+        keyvalue_create(bucket; connection)
+        KeyValue{T}(connection, bucket, "KV_$bucket", T)
     end
 end
 
@@ -56,7 +50,7 @@ function KeyValue(bucket::String; connection::NATS.Connection = NATS.connection(
 end
 
 function keyvalue_create(bucket::String; connection::NATS.Connection = NATS.connection(:default))
-    stream_create(
+    stream_config = StreamConfiguration(
         name = "KV_$bucket",
         subjects = ["\$KV.$bucket.>"],
         allow_rollup_hdrs = true,
@@ -64,19 +58,22 @@ function keyvalue_create(bucket::String; connection::NATS.Connection = NATS.conn
         allow_direct = true,
         max_msgs_per_subject = 1,
         discard = :new;
-        connection)
+    )
+    create(connection, stream_config)
 end
 
 function keyvalue_delete(bucket::String; connection::NATS.Connection = NATS.connection(:default))
-    stream_delete(name = "KV_$bucket"; connection)
+    delete(connection, "KV_$bucket")
 end
 
-function keyvalue_names()
-
+function keyvalue_names(; connection::NATS.Connection = NATS.connection(:default))
+    map(stream_names(; subject = "\$KV.>", connection)) do sn
+        replace(sn, r"^KV_"=>"")
+    end
 end
 
-function keyvalue_list()
-
+function keyvalue_list(; connection::NATS.Connection = NATS.connection(:default))
+    stream_list(; subject = "\$KV.>", connection)
 end
 
 function validate_key(key::String)
@@ -92,15 +89,16 @@ end
 
 function setindex!(kv::KeyValue, value, key::String)
     validate_key(key)
-    ack = publish("\$KV.$(kv.bucket).$key", value; connection = connection(kv))
+    ack = JetStream.publish_with_ack(connection(kv), "\$KV.$(kv.bucket).$key", value)
     # TODO: validate puback
     kv
 end
 
-function setindex!(kv::KeyValue, value, key::String, revision::UInt64)
+function setindex!(kv::KeyValue, value, key::Tuple{String, UInt64})
+    key, revision = key
     validate_key(key)
     hdrs = ["Nats-Expected-Last-Subject-Sequence" => string(revision)]
-    ack = publish("\$KV.$(kv.bucket).$key", (value, hdrs); connection = connection(kv))
+    ack = publish(connection(kv), "\$KV.$(kv.bucket).$key", (value, hdrs))
     if ack.seq == 0
         error("Update failed, seq do not match. Please retry.")
     end
@@ -113,7 +111,7 @@ const KV_REVISION_LATEST = 0
 #  revision::UInt64 = KV_REVISION_LATEST
 function getindex(kv::KeyValue, key::String, revision = KV_REVISION_LATEST)
     validate_key(key)
-    msg = stream_msg_get_direct("KV_$(kv.bucket)", "\$KV.$(kv.bucket).$key"; connection = connection(kv))
+    msg = msg_get(connection(kv), "KV_$(kv.bucket)", "\$KV.$(kv.bucket).$key")
     status = NATS.statuscode(msg) 
     if status == 404
         throw(KeyError(key))
@@ -133,7 +131,7 @@ end
 function empty!(kv::KeyValue)
     # hdrs = [ "KV-Operation" => "PURGE" ]
     # ack = publish("\$KV.$(kv.bucket)", (nothing, hdrs); connection = kv.connection)
-    stream_purge(kv.stream_name; connection = connection(kv))
+    purge(connection(kv), kv.stream_name)
 end
 
 function delete!(kv::KeyValue, key::String)
@@ -144,7 +142,7 @@ end
 function iterate(kv::KeyValue)
     cons = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
     # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = connection(kv))
+    msg = NATS.request(connection(kv), 1, "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}")
     # @show msg
     msg = only(msg)
     NATS.statuscode(msg) == 404 && return nothing
@@ -162,7 +160,7 @@ end
 
 function iterate(kv::KeyValue, cons)
     # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; connection = connection(kv), timer = Timer(0.5))
+    msg = NATS.request(connection(kv), "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; timer = Timer(0.5))
     if isempty(msg)
         @error "Consumer disapeared."
         return nothing
@@ -177,7 +175,7 @@ end
 
 function length(kv::KeyValue)
     consumer = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
-    replies = NATS.request("\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$consumer", "{\"no_wait\": true}", 1; connection = connection(kv))
+    replies = NATS.request(connection(kv), "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$consumer", "{\"no_wait\": true}", 1)
     if isempty(replies)
         0
     else
@@ -188,16 +186,15 @@ function length(kv::KeyValue)
     end
 end
 
-function kv_watch(kv::Any, key::String = nothing; kw...)::Channel{KeyValueEntry} # better use do
+function watch(f, kv::KeyValue, key::String = ALL_KEYS; kw...) 
 
 end
 
-function kv_keys(kv::Any) # keys
+function watch(kv::KeyValue, key::String = ALL_KEYS; kw...)::Channel{KeyValueEntry}
 
 end
 
-
-function kv_history(kv::Any, key::String)
+function history(kv::KeyValue, key::String)::Vector{KeyValueEntry}
 
 end
 

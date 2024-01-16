@@ -1,6 +1,6 @@
 function _try_next_until_drained(stream, consumer; connection)
     msg = nothing
-    while !isdrained(connection)
+    while NATS.status(connection) != NATS.DRAINED
         timer = Timer(5)
         try
             msg = next(stream, consumer; connection, timer)
@@ -14,7 +14,7 @@ function _try_next_until_drained(stream, consumer; connection)
         end
     end
     if isnothing(msg)
-        @assert isdrained(connection) "The only reason for `nothing` message should be draining the connection."
+        @assert connection.status == NATS.DRAINED "The only reason for `nothing` message should be draining the connection."
         error("Connection is draining.")
     end
     msg
@@ -45,7 +45,7 @@ function worker(
     while true # TODO: while connection is not drained
         msg = _try_next_until_drained(stream, consumer; connection)
         # If connection is about to be closed, return message to the stream immediately.
-        if isdrained(connection)
+        if NATS.status(connection) == NATS.DRAINED
             !isnothing(msg) && nak(msg; connection)
             break
         end
@@ -53,7 +53,7 @@ function worker(
         try
             result = f(msg)
             if !isnothing(reply_to)
-                publish(reply_to, result; connection)
+                publish(connection, reply_to, result)
             end
             ack(msg; connection)
         catch err

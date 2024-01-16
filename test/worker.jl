@@ -5,29 +5,30 @@ using Random
 
 @testset "Work queue." begin
 
-    connection = NATS.connect()
+    connection = JetStream.connect()
     
     rng = MersenneTwister()
 
     stream_name = randstring(rng, 10)
     subject_prefix = randstring(rng, 4)
 
-    did_create = stream_create(
-        connection = connection,
+    stream_config = JetStream.StreamConfiguration(
         name = stream_name,
         description = "Work queue stream.",
         subjects = ["$subject_prefix.*"],
         retention = :workqueue,
-        storage = :memory)
+        storage = :memory
+    )
+    stream_info = JetStream.create(connection, stream_config)
+    @test stream_info isa JetStream.StreamInfo
 
-    @test did_create
-
-    consumer = JetStream.consumer_create(
-        stream_name;
-        connection,
+    consumer_config = JetStream.ConsumerConfiguration(
         filter_subjects=["$subject_prefix.*"],
         ack_policy = :explicit,
-        name ="workqueue_consumer")
+        name ="workqueue_consumer"
+    )
+
+    consumer = JetStream.create(connection, consumer_config, stream_info)
 
     n_workers = 3
     n_publications = 100
@@ -45,7 +46,7 @@ using Random
     end
     
     for i in 1:n_publications
-        NATS.publish("$subject_prefix.task", "Task $i"; connection)
+        NATS.publish(connection, "$subject_prefix.task", "Task $i")
     end
 
     try take!(cond) catch end

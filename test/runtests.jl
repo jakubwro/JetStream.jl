@@ -11,13 +11,12 @@ using JetStream
 function have_nats()
     try
         Sockets.getaddrinfo(get(ENV, "NATS_HOST", "localhost"))
-        nc = NATS.connect()
-        sleep(10)
+        nc = JetStream.connect()
         @assert nc.status == NATS.CONNECTED
-        @info "NATS avaliable, running connected tests."
+        @info "JetStream avaliable, running connected tests."
         true
     catch err
-        @info "NATS unavailable, skipping connected tests."  err
+        @info "JetStream unavailable, skipping connected tests."  err
         false
     end
 end

@@ -1,3 +1,5 @@
+abstract type ApiResponse end
+
 @kwdef struct ApiError <: Exception
     "HTTP like error code in the 300 to 500 range"
     code::Int64
@@ -5,6 +7,10 @@
     description::Union{String, Nothing} = nothing
     "The NATS error code unique to each kind of error"
     err_code::Union{Int64, Nothing} = nothing
+end
+
+struct ApiResult <: ApiResponse
+    success::Bool
 end
 
 @kwdef struct SubjectTransform
@@ -139,11 +145,13 @@ end
     "Sequence number of the first message in the Stream"
     first_seq::UInt64
     "The timestamp of the first message in the Stream"
-    first_ts::Union{NanoDate, Nothing} = nothing
+    # first_ts::Union{NanoDate, Nothing} = nothing
+    first_ts::Union{String, Nothing} = nothing
     "Sequence number of the last message in the Stream"
     last_seq::UInt64
     "The timestamp of the last message in the Stream"
-    last_ts::Union{NanoDate, Nothing} = nothing
+    # last_ts::Union{NanoDate, Nothing} = nothing
+    last_ts::Union{String, Nothing} = nothing
     "IDs of messages that were deleted using the Message Delete API or Interest based streams removing messages out of order"
     deleted::Union{Vector{UInt64}, Nothing} = nothing
     # "Subjects and their message counts when a subjects_filter was set"
@@ -203,7 +211,7 @@ end
     domain::Union{String, Nothing} = nothing
 end
 
-@kwdef struct StreamInfo
+@kwdef struct StreamInfo <: ApiResponse
     "The active configuration for the Stream"
     config::StreamConfiguration
     "Detail about the current State of the Stream"
@@ -286,7 +294,7 @@ end
     last_active::Union{NanoDate, Nothing} = nothing
 end
 
-@kwdef struct ConsumerInfo
+@kwdef struct ConsumerInfo <: ApiResponse
     "The Stream the consumer belongs to"
     stream_name::String
     "A unique name for the consumer, either machine generated or the durable name"
@@ -324,4 +332,11 @@ end
     time::String
     "Base64 encoded headers for the message"
     hdrs::Union{String, Nothing} = nothing
+end
+
+
+struct IterableResponse
+    total::Int64
+    offset::Int64
+    limit::Int64
 end

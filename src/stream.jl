@@ -1,99 +1,132 @@
-function stream_create(config::StreamConfiguration; connection::NATS.Connection = NATS.connection(:default))
+function trycreate(connection::NATS.Connection, config::StreamConfiguration)::Union{StreamInfo, ApiError}
     validate(config)
-    resp = NATS.request(JSON3.Object, "\$JS.API.STREAM.CREATE.$(config.name)", config; connection)
-    throw_on_api_error(resp)
-    resp.did_create
+    NATS.request(Union{StreamInfo, ApiError}, connection, "\$JS.API.STREAM.CREATE.$(config.name)", config)
 end
 
-function stream_create(; connection::NATS.Connection = NATS.connection(:default), kwargs...)
-    config = StreamConfiguration(; kwargs...)
-    stream_create(config; connection)
+function create(connection::NATS.Connection, config::StreamConfiguration)::Union{StreamInfo, ApiError}
+    response = trycreate(connection, config::StreamConfiguration)
+    if response isa ApiError
+        throw(response)
+    end
+    response
 end
 
-function stream_update(config::StreamConfiguration; connection::NATS.Connection = NATS.connection(:default))
+function tryupdate(connection::NATS.Connection, config::StreamConfiguration)
     validate(config)
-    resp = NATS.request(JSON3.Object, "\$JS.API.STREAM.UPDATE.$(config.name)", config; connection)
-    throw_on_api_error(resp)
-    true
+    NATS.request(Union{ApiError, StreamInfo}, connection, "\$JS.API.STREAM.UPDATE.$(config.name)", config)
 end
 
-function stream_update(; connection::NATS.Connection = NATS.connection(:default), kwargs...)
-    config = StreamConfiguration(; kwargs...)
-    stream_update(config; connection)
+function update(connection::NATS.Connection, config::StreamConfiguration)
+    validate(config)
+    response = NATS.request(StreamInfo, connection, "\$JS.API.STREAM.UPDATE.$(config.name)", config)
+    if response isa ApiError
+        throw(response)
+    end
+    response
 end
 
-function stream_create_or_update(config::StreamConfiguration; connection::NATS.Connection = NATS.connection(:default))
-    try
-        stream_update(config; connection)        
-    catch err
-        if err isa ApiError && err.code == 404
-            stream_create(config; connection)
-        else
-            rethrow()
-        end
+function create_or_update(connection::NATS.Connection, stream::StreamConfiguration)
+    res = tryupdate(connection, config)
+    if res isa StreamInfo
+        res
+    elseif res isa ApiError
+        err.code != 404 && throw(res)
+        create(connection, stream)
     end
 end
 
-function stream_create_or_update(; connection::NATS.Connection = NATS.connection(:default), kwargs...)
-    config = StreamConfiguration(; kwargs...)
-    stream_create_or_update(config; connection)
+function trydelete(connection::NATS.Connection, stream::String)
+    NATS.request(Union{ApiResult, ApiError}, connection, "\$JS.API.STREAM.DELETE.$(stream)")
 end
 
-function stream_delete(; connection::NATS.Connection = NATS.connection(:default), name::String)
-    validate_name(name)
-    resp = NATS.request(JSON3.Object, "\$JS.API.STREAM.DELETE.$(name)"; connection)
-    throw_on_api_error(resp)
-    resp.success
+function trydelete(connection::NATS.Connection, stream::StreamInfo)
+    trydelete(connection, stream.config.name)
 end
 
-function stream_info(name::String; deleted_details = false, subjects_filter::Union{String, Nothing} = nothing, connection::NATS.Connection = NATS.connection(:default))
-    validate_name(name)
-    msg = NATS.request("\$JS.API.STREAM.INFO.$(name)"; connection)
+function delete(connection::NATS.Connection, stream::String)
+    res = trydelete(connection, stream)
+    if res isa ApiError
+        throw(res)
+    end
+    res
+end
+
+function delete(connection::NATS.Connection, stream::StreamInfo)
+    delete(connection, stream.config.name)
+end
+
+function info(connection::NATS.Connection,
+              stream_name::String;
+              deleted_details = false,
+              subjects_filter::Union{String, Nothing} = nothing)
+    validate_name(stream_name)
+    msg = NATS.request(connection, "\$JS.API.STREAM.INFO.$(stream_name)")
     resp = NATS.payload(msg)
-    resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
+    # resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
     json = JSON3.read(resp)
     throw_on_api_error(json)
     JSON3.read(JSON3.write(json), StreamInfo)
 end
 
-function stream_list(; connection::NATS.Connection = NATS.connection(:default))
-    msg = NATS.request("\$JS.API.STREAM.LIST"; connection)
+function streams(::Type{ConsumerInfo}, connection::NATS.Connection, subject = nothing)
+    req = isnothing(subject) ? nothing : "{\"subject\": \"$subject\"}"
+
+    result = StreamInfo[]
+    # while total > offset + limit
+    # end
+    msg = NATS.request(connection, "\$JS.API.STREAM.LIST", req)
     resp = NATS.payload(msg)
-    resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
+    # resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
     json = JSON3.read(resp)
     throw_on_api_error(json)
     map(json.streams) do s
-        JSON3.read(JSON3.write(s), StreamInfo)
-    end 
+        item = StructTypes.constructfrom(StreamInfo, s)
+        push!(result, item)
+    end
+    result
 end
 
-function stream_names(; subject = nothing, connection::NATS.Connection = NATS.connection(:default), timer = Timer(5))
+function streams(::Type{String}, connection::NATS.Connection, subject = nothing; timer = Timer(5))
     req = isnothing(subject) ? nothing : "{\"subject\": \"$subject\"}"
-    resp = NATS.request(JSON3.Object, "\$JS.API.STREAM.NAMES", req; connection, timer)
+    resp = NATS.request(JSON3.Object, connection, "\$JS.API.STREAM.NAMES", req; timer)
     throw_on_api_error(resp)
     # total, offset, limit = resp.total, resp.offset, resp.limit
     #TODO: pagination
-    @something resp.streams String[]
+    isnothing(resp.streams) ? String[] : collect(resp.streams)
 end
 
-function stream_msg_get_direct(stream_name::String, subject::String; connection = NATS.connection(:default))
-    replies = NATS.request("\$JS.API.DIRECT.GET.$stream_name.$subject", nothing, 1; connection)
+function streams(connection::NATS.Connection, subject = nothing)
+    streams(StreamInfo, connection, subject)
+end
+
+function msg_get(connection::NATS.Connection, stream::StreamInfo, subject)
+    if stream.config.allow_direct
+        replies = NATS.request(connection, 1, "\$JS.API.DIRECT.GET.$stream_name.$subject", nothing)
+        isempty(replies) && error("No replies.")
+        first(replies)
+    else
+        replies = NATS.request(connection, "\$JS.API.STREAM.MSG.GET.$stream_name", "{\"last_by_subj\": \"\$KV.asdf.$subject\"}", 1)
+        isempty(replies) && error("No replies.")
+        first(replies)
+    end
+end
+
+function msg_get(connection::NATS.Connection, stream::String, subject)
+    replies = NATS.request(connection, 1, "\$JS.API.DIRECT.GET.$stream.$subject", nothing)
     isempty(replies) && error("No replies.")
     first(replies)
 end
 
-function stream_msg_get(stream_name::String, subject::String; connection = NATS.connection(:default))
-    replies = NATS.request("\$JS.API.STREAM.MSG.GET.$stream_name", "{\"last_by_subj\": \"\$KV.asdf.$subject\"}", 1; connection)
+function msg_delete(stream_name::String, seq::UInt64; connection = NATS.connection(:default))
+    replies = NATS.request(connection, "\$JS.API.STREAM.MSG.DELETE.$stream_name", "{\"seq\": \"\$KV.asdf.$subject\"}", 1)
     isempty(replies) && error("No replies.")
     first(replies)
 end
 
-function stream_msg_delete(stream_name::String, seq::UInt64; connection = NATS.connection(:default))
-    replies = NATS.request("\$JS.API.STREAM.MSG.DELETE.$stream_name", "{\"seq\": \"\$KV.asdf.$subject\"}", 1; connection)
-    isempty(replies) && error("No replies.")
-    first(replies)
+function purge(connection::NATS.Connection, stream::String)
+    replies = NATS.request(connection, 1, "\$JS.API.STREAM.PURGE.$stream", nothing)
 end
 
-function stream_purge(stream_name::String; connection = NATS.connection(:default))
-    replies = NATS.request("\$JS.API.STREAM.PURGE.$stream_name", nothing, 1; connection)
+function purge(connection::NATS.Connection, stream::StreamInfo)
+    purge(connection, stream.name)
 end

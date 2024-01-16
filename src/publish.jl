@@ -1,11 +1,11 @@
 
 function _try_request(subject, data; connection)
-    replies = NATS.request(subject, data, 1; connection)
+    replies = NATS.request(connection, 1, subject, data)
     isempty(replies) && error("No `ack` received.")
     only(replies)
 end
 
-function publish(subject, data; delays = [1,1,1], connection::NATS.Connection = NATS.connection(:default))
+function publish_with_ack(connection::NATS.Connection, subject, data; delays = [1,1,1])
     ack_msg = _try_request(subject, data; connection)
     if NATS.statuscode(ack_msg) == 503
         for delay in delays

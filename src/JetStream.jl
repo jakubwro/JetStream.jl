@@ -5,9 +5,9 @@ using NanoDates
 using StructTypes
 using Random
 using JSON3
+using DocStringExtensions
 
 import NATS
-using NATS: isdrained
 
 import Base: show, showerror
 import Base: setindex!, getindex, empty!, delete!, iterate, length
@@ -20,6 +20,7 @@ const STREAM_COMPRESSION_OPTIONS     = [:none, :s2]
 const CONSUMER_ACK_POLICY_OPTIONS    = [:none, :all, :explicit]
 const CONSUMER_REPLAY_POLICY_OPTIONS = [:instant, :original]
 
+include("connection.jl")
 include("structs.jl")
 include("errors.jl")
 include("validate.jl")
@@ -31,6 +32,7 @@ include("convert.jl")
 include("worker.jl")
 include("publish.jl")
 include("init.jl")
+include("channel.jl")
 
 export PubAck, StreamConfiguration, stream_create, limits, interest, workqueue, memory, file, NATS, publish
 

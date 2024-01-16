@@ -23,3 +23,7 @@ show(io::IO, st::Republish) = JSON3.pretty(io, st)
 show(io::IO, st::StreamConsumerLimit) = JSON3.pretty(io, st)
 show(io::IO, st::StreamConfiguration) = JSON3.pretty(io, st)
 
+
+# function show(io::IO, ::MIME"text/plain", response::ApiResponse)
+#     JSON3.pretty(io, response)
+# end

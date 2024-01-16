@@ -1,11 +1,11 @@
 @testset "Key value - 100 keys" begin
-    connection = NATS.connect()
+    connection = JetStream.connect()
     kv = JetStream.KeyValue("test_kv"; connection)
     @time @sync for i in 1:100
         @async kv["key_$i"] = "value_$i"
     end
 
-    other_conn = NATS.connect()
+    other_conn = JetStream.connect()
     kv = JetStream.KeyValue("test_kv"; connection = other_conn)
     for i in 1:100
         @test kv["key_$i"] == "value_$i"
@@ -13,7 +13,7 @@
 end
 
 @testset "Create and delete KV bucket" begin
-    connection = NATS.connect()
+    connection = JetStream.connect()
     bucket = randstring(10)
     kv = JetStream.KeyValue(bucket; connection)
     @test_throws KeyError kv["some_key"]
