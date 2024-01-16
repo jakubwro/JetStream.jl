@@ -146,9 +146,9 @@ version = "2023.1.10"
 
 [[deps.NATS]]
 deps = ["BufferedStreams", "CodecBase", "DocStringExtensions", "JSON3", "MbedTLS", "Random", "Revise", "ScopedValues", "Sockets", "Sodium", "StructTypes", "URIs"]
-git-tree-sha1 = "6900226952c6bf86a27256a2da7c450f4fcd7833"
+git-tree-sha1 = "3e908a9a2ebf85aa5ee6cd8e15b123f0ae68de51"
 repo-rev = "main"
-repo-url = "../NATS"
+repo-url = "https://github.com/jakubwro/NATS.jl"
 uuid = "55e73f9c-eeeb-467f-b4cc-a633fde63d2a"
 version = "0.1.0"
 
