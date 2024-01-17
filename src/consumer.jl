@@ -15,6 +15,10 @@ end
 function create_or_update(consumer::ConsumerConfiguration, stream::StreamInfo)
 end
 
+function create(connection::NATS.Connection, consumer::ConsumerConfiguration, stream::String)
+    create_or_update(connection, consumer, stream)
+end
+
 function create(connection::NATS.Connection, consumer::ConsumerConfiguration, stream::StreamInfo)
     create_or_update(connection, consumer, stream.config.name)
 end
@@ -32,12 +36,13 @@ function next(connection::NATS.Connection, stream::String, consumer::String; no_
 end
 
 function next(connection::NATS.Connection, consumer::ConsumerInfo; no_wait = false, timer = Timer(DEFAULT_NEXT_TIMEOUT_SECONDS))
-    # if no_wait
-        # NATS.request("\$JS.API.CONSUMER.MSG.NEXT.$stream.$consumer", "{\"no_wait\": true}"; connection)
-    # else
-    NATS.request(connection, "\$JS.API.CONSUMER.MSG.NEXT.$(consumer.stream_name).$(consumer.config.name)"; timer)
-
-    # end 
+    req = "{\"no_wait\": $no_wait}"
+    msgs = NATS.request(connection, 1, "\$JS.API.CONSUMER.MSG.NEXT.$(consumer.stream_name).$(consumer.name)", req; timer)
+    if isempty(msgs)
+        error("No replies.")
+    end
+    msg = only(msgs)
+    msg
 end
 
 # function next(
@@ -81,6 +86,10 @@ end
 # function consumer_delete()
 
 # end
+
+function delete(connection::NATS.Connection, consumer::ConsumerInfo)
+    @warn "not implemented"
+end
 
 function next(stream::String, consumer::String; no_wait = false, timer = Timer(DEFAULT_NEXT_TIMEOUT_SECONDS), connection::NATS.Connection)
     # if no_wait

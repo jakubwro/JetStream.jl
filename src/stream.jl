@@ -68,31 +68,48 @@ function info(connection::NATS.Connection,
     JSON3.read(JSON3.write(json), StreamInfo)
 end
 
-function streams(::Type{ConsumerInfo}, connection::NATS.Connection, subject = nothing)
-    req = isnothing(subject) ? nothing : "{\"subject\": \"$subject\"}"
-
+function streams(::Type{StreamInfo}, connection::NATS.Connection, subject = nothing)
     result = StreamInfo[]
-    # while total > offset + limit
-    # end
-    msg = NATS.request(connection, "\$JS.API.STREAM.LIST", req)
-    resp = NATS.payload(msg)
-    # resp = replace(resp, "0001-01-01T00:00:00Z" => "0001-01-01T00:00:00.000Z") # Workaround for timestamp parsing.
-    json = JSON3.read(resp)
-    throw_on_api_error(json)
-    map(json.streams) do s
-        item = StructTypes.constructfrom(StreamInfo, s)
-        push!(result, item)
+    offset = 0
+    req = Dict()
+    isnothing(subject) || (req[:subject] = subject)
+    while true
+        req[:offset] = offset
+        msg = NATS.request(connection, "\$JS.API.STREAM.LIST", JSON3.write(req))
+        resp = NATS.payload(msg)
+        json = JSON3.read(resp)
+        throw_on_api_error(json)
+        for s in json.streams
+            item = StructTypes.constructfrom(StreamInfo, s)
+            push!(result, item)
+        end
+        offset = offset + json[:limit]
+        if json[:total] <= offset
+            break
+        end
     end
     result
 end
 
 function streams(::Type{String}, connection::NATS.Connection, subject = nothing; timer = Timer(5))
-    req = isnothing(subject) ? nothing : "{\"subject\": \"$subject\"}"
-    resp = NATS.request(JSON3.Object, connection, "\$JS.API.STREAM.NAMES", req; timer)
-    throw_on_api_error(resp)
-    # total, offset, limit = resp.total, resp.offset, resp.limit
-    #TODO: pagination
-    isnothing(resp.streams) ? String[] : collect(resp.streams)
+    result = String[]
+    offset = 0
+    req = Dict()
+    isnothing(subject) || (req[:subject] = subject)
+    while true
+        req[:offset] = offset
+        json = NATS.request(JSON3.Object, connection, "\$JS.API.STREAM.NAMES", JSON3.write(req); timer)
+        throw_on_api_error(json)
+        isnothing(json.streams) && break
+        for s in json.streams
+            push!(result, s)
+        end
+        offset = offset + json[:limit]
+        if json[:total] <= offset
+            break
+        end
+    end
+    result
 end
 
 function streams(connection::NATS.Connection, subject = nothing)

@@ -5,13 +5,13 @@ const MAX_HISTORY    = 64
 const ALL_KEYS       = ">"
 const LATEST_REVISION = UInt(0)
 
-struct KeyValueEntry
+struct KeyValueEntry{TValue}
     # Bucket is the bucket the data was loaded from.
     bucket::String
     # Key is the key that was retrieved.
     key::String
     # Value is the retrieved value.
-    value::String
+    value::Union{TValue, Nothing}
     # Revision is a unique sequence for this value.
     revision::UInt64
     # Created is the time the data was put in the bucket.
@@ -20,6 +20,10 @@ struct KeyValueEntry
     delta::UInt64
     # Operation returns Put or Delete or Purge.
     operation::Symbol
+end
+
+function isdeleted(entry::KeyValueEntry)
+    entry.operation == :del || entry.operation == :purge
 end
 
 struct KeyValue{TValue} <: AbstractDict{String, TValue}
@@ -136,19 +140,85 @@ end
 
 function delete!(kv::KeyValue, key::String)
     hdrs = [ "KV-Operation" => "DEL" ]
-    ack = publish("\$KV.$(kv.bucket).$key", (nothing, hdrs); connection = connection(kv))
+    ack = publish_with_ack(connection(kv), "\$KV.$(kv.bucket).$key", (nothing, hdrs))
+end
+
+function _kv_op(msg::NATS.Msg)
+    hdrs = String(@view msg.payload[begin:msg.headers_length])
+    range = findfirst("KV-Operation", hdrs)
+    isnothing(range) && return :none
+    ending = findfirst("\r\n", hdrs[last(range):end])
+    op = hdrs[(last(range) + 3):(last(range) + first(ending)-2)]
+    if op == "DEL"
+        :del
+    elseif op == "PURGE"
+        :purge
+    else
+        :unexpected
+    end
+end
+
+function watch(f, kv::KeyValue; skip_deleted = false, all = true)::Tuple{NATS.Sub, ConsumerInfo}
+    JetStream.subscribe(connection(kv), "\$KV.$(kv.bucket).>") do msg
+        headers = NATS.headers(msg)
+        keys = first.(headers)
+        op = _kv_op(msg)
+        value = if op == :del || op == :purge
+                    nothing
+                else
+                    convert(kv.value_type, msg)
+                end
+        entry = KeyValueEntry{kv.value_type}(kv.bucket, msg.subject, value, 0, NanoDate(), 0, op)
+        if !isdeleted(entry) || !skip_deleted
+            f(entry)
+        end
+    end
+end
+
+function all_keys(kv::KeyValue)
+    unique_keys = Set()
+    sub = watch(f, kv::KeyValue; skip_deleted = false, all = true, headers_only = true) do entry
+        push!(unique_keys, entry)
+    end
+    drain(sub)
+    unique_keys
+end
+
+function js_subscribe(kv::KeyValue)::Channel
+    ch = Channel(100)
+    # consumer_config = ConsumerConfiguration(
+    #     name = randstring(20)
+    # )
+    # cons = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
+    cons = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
+    errormonitor(@async begin
+        try
+            while true
+                # msg = next(connection(kv), cons)
+                msg = next("KV_$(kv.bucket)", cons, connection = connection(kv))
+                NATS.statuscode(msg) == 404 && break
+                put!(ch, msg)
+            end
+        finally
+            close(ch)
+        end
+    end)
+    ch
 end
 
 function iterate(kv::KeyValue)
-    cons = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
-    # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request(connection(kv), 1, "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}")
-    # @show msg
-    msg = only(msg)
-    NATS.statuscode(msg) == 404 && return nothing
+    consumer_config = ConsumerConfiguration(
+        name = randstring(20)
+    )
+    consumer = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
+    msg = next(connection(kv), consumer, no_wait = true)
+    if NATS.statuscode(msg) == 404
+        # TODO: remove consumer?
+        return nothing
+    end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     value = convert(kv.value_type, msg)
-    (key => value, cons)
+    (key => value, consumer)
 end
 
 # function convert(::Type{KeyValueEntry}, msg::NATS.Msg)
@@ -158,41 +228,38 @@ end
 #     KeyValueEntry(stream, msg.subject, NATS.payload(msg), parse(UInt64, seq), unixmillis2nanodate(parse(Int128, nanos)), 0, :none)
 # end
 
-function iterate(kv::KeyValue, cons)
-    # msg = next("KV_$(kv.bucket)", cons; connection = kv.connection, timer = Timer(1))
-    msg = NATS.request(connection(kv), "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$cons", "{\"no_wait\": true}", 1; timer = Timer(0.5))
-    if isempty(msg)
-        @error "Consumer disapeared."
+function iterate(kv::KeyValue, consumer)
+    msg = next(connection(kv), consumer, no_wait = true)
+    if NATS.statuscode(msg) == 404
+        # TODO: remove consumer?
         return nothing
     end
-    # @show msg
-    msg = only(msg)
-    NATS.statuscode(msg) == 404 && return nothing
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     value = convert(kv.value_type, msg)
-    (key => value, cons)
+    (key => value, consumer)
 end
 
 function length(kv::KeyValue)
-    consumer = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
-    replies = NATS.request(connection(kv), "\$JS.API.CONSUMER.MSG.NEXT.KV_$(kv.bucket).$consumer", "{\"no_wait\": true}", 1)
-    if isempty(replies)
+    consumer_config = ConsumerConfiguration(
+        name = randstring(20)
+    )
+    consumer = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
+    msg = next(connection(kv), consumer, no_wait = true)
+    if NATS.statuscode(msg) == 404
         0
     else
-        msg = only(replies)
-        NATS.statuscode(msg) == 404 && return 0
         remaining = last(split(msg.reply_to, "."))
         parse(Int64, remaining) + 1
     end
 end
 
-function watch(f, kv::KeyValue, key::String = ALL_KEYS; kw...) 
+# function watch(f, kv::KeyValue, key::String = ALL_KEYS; kw...) 
 
-end
+# end
 
-function watch(kv::KeyValue, key::String = ALL_KEYS; kw...)::Channel{KeyValueEntry}
+# function watch(kv::KeyValue, key::String = ALL_KEYS; kw...)::Channel{KeyValueEntry}
 
-end
+# end
 
 function history(kv::KeyValue, key::String)::Vector{KeyValueEntry}
 

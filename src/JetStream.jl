@@ -31,6 +31,7 @@ include("show.jl")
 include("convert.jl")
 include("worker.jl")
 include("publish.jl")
+include("subscribe.jl")
 include("init.jl")
 include("channel.jl")
 
