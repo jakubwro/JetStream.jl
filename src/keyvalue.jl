@@ -207,6 +207,7 @@ function js_subscribe(kv::KeyValue)::Channel
 end
 
 function iterate(kv::KeyValue)
+    unique_keys = Set{String}()
     consumer_config = ConsumerConfiguration(
         name = randstring(20)
     )
@@ -218,7 +219,8 @@ function iterate(kv::KeyValue)
     end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     value = convert(kv.value_type, msg)
-    (key => value, consumer)
+    push!(unique_keys, key)
+    (key => value, (consumer, unique_keys))
 end
 
 # function convert(::Type{KeyValueEntry}, msg::NATS.Msg)
@@ -228,15 +230,31 @@ end
 #     KeyValueEntry(stream, msg.subject, NATS.payload(msg), parse(UInt64, seq), unixmillis2nanodate(parse(Int128, nanos)), 0, :none)
 # end
 
-function iterate(kv::KeyValue, consumer)
+# No way to get number of not deleted items fast, also kv can change during iteration.
+IteratorSize(::KeyValue) = Base.SizeUnknown()
+IteratorSize(::Base.KeySet{String, KeyValue{T}}) where {T} = Base.SizeUnknown()
+IteratorSize(::Base.ValueIterator{JetStream.KeyValue{T}}) where {T} = Base.SizeUnknown()
+
+function iterate(kv::KeyValue, (consumer, unique_keys))
     msg = next(connection(kv), consumer, no_wait = true)
     if NATS.statuscode(msg) == 404
-        # TODO: remove consumer?
         return nothing
     end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
-    value = convert(kv.value_type, msg)
-    (key => value, consumer)
+    op = _kv_op(msg)
+    if op == :del || op == :purge 
+        # Item is deleted, continue
+        #TODO change cond order
+        iterate(kv, (consumer, unique_keys))
+    elseif key in unique_keys
+        @warn "Key \"$key\" changed during iteration."
+        # skip item
+        iterate(kv, (consumer, unique_keys))
+    else
+        value = convert(kv.value_type, msg)
+        push!(unique_keys, key)
+        (key => value, (consumer, unique_keys))
+    end
 end
 
 function length(kv::KeyValue)

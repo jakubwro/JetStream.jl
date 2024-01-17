@@ -11,6 +11,7 @@ import NATS
 
 import Base: show, showerror
 import Base: setindex!, getindex, empty!, delete!, iterate, length
+import Base: IteratorSize
 
 abstract type JetStreamPayload end
 
