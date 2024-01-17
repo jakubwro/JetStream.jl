@@ -1,8 +1,6 @@
 
 
 function subscribe(f, connection, subject)
-    @show connection
-    @show subject
     subject_streams = streams(connection, subject)
     if isempty(subject_streams)
         error("No stream found for subject `$subject`")

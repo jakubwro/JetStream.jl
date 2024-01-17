@@ -22,6 +22,10 @@ struct KeyValueEntry{TValue}
     operation::Symbol
 end
 
+function show(io::IO, entry::KeyValueEntry)
+    print(io, "$(entry.key) => $(entry.value)")
+end
+
 function isdeleted(entry::KeyValueEntry)
     entry.operation == :del || entry.operation == :purge
 end
@@ -175,37 +179,6 @@ function watch(f, kv::KeyValue; skip_deleted = false, all = true)::Tuple{NATS.Su
     end
 end
 
-function all_keys(kv::KeyValue)
-    unique_keys = Set()
-    sub = watch(f, kv::KeyValue; skip_deleted = false, all = true, headers_only = true) do entry
-        push!(unique_keys, entry)
-    end
-    drain(sub)
-    unique_keys
-end
-
-function js_subscribe(kv::KeyValue)::Channel
-    ch = Channel(100)
-    # consumer_config = ConsumerConfiguration(
-    #     name = randstring(20)
-    # )
-    # cons = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
-    cons = consumer_create("KV_$(kv.bucket)"; connection = connection(kv))
-    errormonitor(@async begin
-        try
-            while true
-                # msg = next(connection(kv), cons)
-                msg = next("KV_$(kv.bucket)", cons, connection = connection(kv))
-                NATS.statuscode(msg) == 404 && break
-                put!(ch, msg)
-            end
-        finally
-            close(ch)
-        end
-    end)
-    ch
-end
-
 function iterate(kv::KeyValue)
     unique_keys = Set{String}()
     consumer_config = ConsumerConfiguration(
@@ -242,13 +215,13 @@ function iterate(kv::KeyValue, (consumer, unique_keys))
     end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     op = _kv_op(msg)
-    if op == :del || op == :purge 
-        # Item is deleted, continue
-        #TODO change cond order
-        iterate(kv, (consumer, unique_keys))
-    elseif key in unique_keys
+    if key in unique_keys
         @warn "Key \"$key\" changed during iteration."
         # skip item
+        iterate(kv, (consumer, unique_keys))
+    elseif op == :del || op == :purge 
+        # Item is deleted, continue.
+        #TODO change cond order
         iterate(kv, (consumer, unique_keys))
     else
         value = convert(kv.value_type, msg)
@@ -258,6 +231,7 @@ function iterate(kv::KeyValue, (consumer, unique_keys))
 end
 
 function length(kv::KeyValue)
+    # TODO: this is not reliable way to check length, it counts deleted items
     consumer_config = ConsumerConfiguration(
         name = randstring(20)
     )
