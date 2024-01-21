@@ -135,13 +135,15 @@ end
 function getindex(kv::KeyValue, key::String)
     validate_key(key)
     subject = "\$KV.$(kv.bucket).$key"
-    msg = stream_message_get(connection(kv), kv.stream_info, subject)
-    status = NATS.statuscode(msg) 
-    if status == 404 # TODO NATSError exception
-        throw(KeyError(key))
-    elseif status > 399
-        error("NATS error.") # TODO: show message.
-    end
+    msg = try
+            stream_message_get(connection(kv), kv.stream_info, subject)
+          catch err
+            if err isa NATS.NATSError && err.code == 404
+                throw(KeyError(key))
+            else
+                rethrow()
+            end
+          end
     op = NATS.headers(msg, "KV-Operation")
     if !isempty(op) && only(op) == "DEL"
         throw(KeyError(key))
@@ -197,10 +199,15 @@ function iterate(kv::KeyValue)
         name = randstring(20)
     )
     consumer = consumer_create(connection(kv), consumer_config, "KV_$(kv.bucket)")
-    msg = consumer_next(connection(kv), consumer, no_wait = true)
-    if NATS.statuscode(msg) == 404
-        return nothing
-    end
+    msg = try 
+            consumer_next(connection(kv), consumer, no_wait = true)
+          catch err
+            if err isa NATS.NATSError && err.code == 404
+                return nothing
+            else
+                rethrow()
+            end
+          end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     value = convert(kv.value_type, msg)
     push!(unique_keys, key)
@@ -220,10 +227,15 @@ IteratorSize(::Base.KeySet{String, KeyValue{T}}) where {T} = Base.SizeUnknown()
 IteratorSize(::Base.ValueIterator{JetStream.KeyValue{T}}) where {T} = Base.SizeUnknown()
 
 function iterate(kv::KeyValue, (consumer, unique_keys))
-    msg = consumer_next(connection(kv), consumer, no_wait = true)
-    if NATS.statuscode(msg) == 404
-        return nothing
-    end
+    msg = try 
+        consumer_next(connection(kv), consumer, no_wait = true)
+      catch err
+        if err isa NATS.NATSError && err.code == 404
+            return nothing
+        else
+            rethrow()
+        end
+      end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
     op = _kv_op(msg)
     if key in unique_keys
