@@ -2,7 +2,7 @@
 
 julia_version = "1.10.0"
 manifest_format = "2.0"
-project_hash = "e8509fd0e2516bd6a507119b32d233da74fc8e29"
+project_hash = "d436a2b7acfeae13826dfe6af5903340177986e4"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -146,7 +146,7 @@ version = "2023.1.10"
 
 [[deps.NATS]]
 deps = ["BufferedStreams", "CodecBase", "DocStringExtensions", "JSON3", "MbedTLS", "Random", "Revise", "ScopedValues", "Sockets", "Sodium", "StructTypes", "URIs"]
-git-tree-sha1 = "3e908a9a2ebf85aa5ee6cd8e15b123f0ae68de51"
+git-tree-sha1 = "725dc7499c56b43693cf7e5bb06cddcf0042c799"
 repo-rev = "main"
 repo-url = "https://github.com/jakubwro/NATS.jl"
 uuid = "55e73f9c-eeeb-467f-b4cc-a633fde63d2a"

@@ -22,6 +22,23 @@ struct KeyValueEntry{TValue}
     operation::Symbol
 end
 
+function KeyValueEntry{T}(msg::NATS.Msg) where {T}
+    @show NATS.headers(msg)
+    _, _, stream, cons, _, revision, sequence, nanos, remaining = split(msg.reply_to, '.')
+    key = string(last(split(msg.subject, '.')))
+    op = _kv_op(msg)
+    value = op == :put ? convert(T, msg) : nothing
+    bucket = stream[4:end]
+    KeyValueEntry{T}(
+        bucket,
+        key,
+        value,
+        parse(Int64, revision),
+        NanoDate(parse(Int64, nanos)),
+        0,
+        op)
+end
+
 function show(io::IO, entry::KeyValueEntry)
     print(io, "$(entry.key) => $(entry.value)")
 end
@@ -30,26 +47,29 @@ function isdeleted(entry::KeyValueEntry)
     entry.operation == :del || entry.operation == :purge
 end
 
-struct KeyValue{TValue} <: AbstractDict{String, TValue}
+@kwdef struct KeyValue{TValue} <: AbstractDict{String, TValue}
     connection::NATS.Connection
     bucket::String
-    stream_name::String
+    stream_info::StreamInfo
     value_type::DataType
+    revisions::ScopedValue{Dict{String, UInt64}} = ScopedValue{Dict{String, UInt64}}()
 end
 
 connection(kv::KeyValue) = kv.connection
-    
+bucket(kv::KeyValue) = kv.bucket
+stream_name(kv::KeyValue) = kv.stream_info.config.name
+
 function KeyValue{T}(bucket::String; connection::NATS.Connection = NATS.connection(:default)) where T
     NATS.find_msg_conversion_or_throw(T)
     NATS.find_data_conversion_or_throw(T)
     try
-        JetStream.info(connection, "KV_$bucket")
-        KeyValue{T}(connection, bucket, "KV_$bucket", T)
+        stream_info = JetStream.stream_info(connection, "KV_$bucket")
+        KeyValue{T}(connection, bucket, stream_info, T, ScopedValue{Dict{String, UInt64}}())
     catch err
         (err isa ApiError && err.code == 404) || rethrow()
         @info "KV $bucket does not exists, creating now."
-        keyvalue_create(bucket; connection)
-        KeyValue{T}(connection, bucket, "KV_$bucket", T)
+        stream_info = keyvalue_create(bucket; connection)
+        KeyValue{T}(connection, bucket, stream_info, T,ScopedValue{Dict{String, UInt64}}())
     end
 end
 
@@ -67,11 +87,11 @@ function keyvalue_create(bucket::String; connection::NATS.Connection = NATS.conn
         max_msgs_per_subject = 1,
         discard = :new;
     )
-    create(connection, stream_config)
+    stream_create(connection, stream_config)
 end
 
 function keyvalue_delete(bucket::String; connection::NATS.Connection = NATS.connection(:default))
-    delete(connection, "KV_$bucket")
+    stream_delete(connection, "KV_$bucket")
 end
 
 function keyvalue_names(; connection::NATS.Connection = NATS.connection(:default))
@@ -96,32 +116,28 @@ function validate_key(key::String)
 end
 
 function setindex!(kv::KeyValue, value, key::String)
-    validate_key(key)
-    ack = JetStream.publish_with_ack(connection(kv), "\$KV.$(kv.bucket).$key", value)
-    # TODO: validate puback
-    kv
-end
-
-function setindex!(kv::KeyValue, value, key::Tuple{String, UInt64})
-    key, revision = key
-    validate_key(key)
-    hdrs = ["Nats-Expected-Last-Subject-Sequence" => string(revision)]
-    ack = publish(connection(kv), "\$KV.$(kv.bucket).$key", (value, hdrs))
-    if ack.seq == 0
-        error("Update failed, seq do not match. Please retry.")
+    revisions = ScopedValues.get(kv.revisions)
+    hdrs = NATS.Headers()
+    if !isnothing(revisions)
+        revision = get(revisions, key, 0)
+        push!(hdrs, "Nats-Expected-Last-Subject-Sequence" => string(revision))
     end
-    # TODO: validate puback
+    validate_key(key)
+    ack = JetStream.stream_publish(connection(kv), "\$KV.$(kv.bucket).$key", (value, hdrs))
+    @assert !isnothing(ack.seq)
+    if !isnothing(revisions)
+        revisions[key] = ack.seq
+    end
     kv
 end
-
-const KV_REVISION_LATEST = 0
 
 #  revision::UInt64 = KV_REVISION_LATEST
-function getindex(kv::KeyValue, key::String, revision = KV_REVISION_LATEST)
+function getindex(kv::KeyValue, key::String)
     validate_key(key)
-    msg = msg_get(connection(kv), "KV_$(kv.bucket)", "\$KV.$(kv.bucket).$key")
+    subject = "\$KV.$(kv.bucket).$key"
+    msg = stream_message_get(connection(kv), kv.stream_info, subject)
     status = NATS.statuscode(msg) 
-    if status == 404
+    if status == 404 # TODO NATSError exception
         throw(KeyError(key))
     elseif status > 399
         error("NATS error.") # TODO: show message.
@@ -131,7 +147,11 @@ function getindex(kv::KeyValue, key::String, revision = KV_REVISION_LATEST)
         throw(KeyError(key))
     end
     seq = NATS.header(msg, "Nats-Sequence")
-    ts = NATS.header(msg, "Nats-Time-Stamp")
+    revisions = ScopedValues.get(kv.revisions)
+    if !isnothing(revisions)
+        revisions[key] = parse(UInt64, seq)
+    end
+    # ts = NATS.header(msg, "Nats-Time-Stamp")
     # KeyValueEntry(kv.bucket, key, NATS.payload(msg), parse(UInt64, seq), NanoDate(ts), 0, :none)
     convert(kv.value_type, msg)
 end
@@ -139,18 +159,18 @@ end
 function empty!(kv::KeyValue)
     # hdrs = [ "KV-Operation" => "PURGE" ]
     # ack = publish("\$KV.$(kv.bucket)", (nothing, hdrs); connection = kv.connection)
-    purge(connection(kv), kv.stream_name)
+    stream_purge(connection(kv), stream_name(kv))
 end
 
 function delete!(kv::KeyValue, key::String)
     hdrs = [ "KV-Operation" => "DEL" ]
-    ack = publish_with_ack(connection(kv), "\$KV.$(kv.bucket).$key", (nothing, hdrs))
+    ack = stream_publish(connection(kv), "\$KV.$(kv.bucket).$key", (nothing, hdrs))
 end
 
 function _kv_op(msg::NATS.Msg)
     hdrs = String(@view msg.payload[begin:msg.headers_length])
     range = findfirst("KV-Operation", hdrs)
-    isnothing(range) && return :none
+    isnothing(range) && return :put
     ending = findfirst("\r\n", hdrs[last(range):end])
     op = hdrs[(last(range) + 3):(last(range) + first(ending)-2)]
     if op == "DEL"
@@ -163,16 +183,8 @@ function _kv_op(msg::NATS.Msg)
 end
 
 function watch(f, kv::KeyValue; skip_deleted = false, all = true)::Tuple{NATS.Sub, ConsumerInfo}
-    JetStream.subscribe(connection(kv), "\$KV.$(kv.bucket).>") do msg
-        headers = NATS.headers(msg)
-        keys = first.(headers)
-        op = _kv_op(msg)
-        value = if op == :del || op == :purge
-                    nothing
-                else
-                    convert(kv.value_type, msg)
-                end
-        entry = KeyValueEntry{kv.value_type}(kv.bucket, msg.subject, value, 0, NanoDate(), 0, op)
+    JetStream.stream_subscribe(connection(kv), "\$KV.$(kv.bucket).>") do msg
+        entry = KeyValueEntry{kv.value_type}(msg)
         if !isdeleted(entry) || !skip_deleted
             f(entry)
         end
@@ -184,10 +196,9 @@ function iterate(kv::KeyValue)
     consumer_config = ConsumerConfiguration(
         name = randstring(20)
     )
-    consumer = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
-    msg = next(connection(kv), consumer, no_wait = true)
+    consumer = consumer_create(connection(kv), consumer_config, "KV_$(kv.bucket)")
+    msg = consumer_next(connection(kv), consumer, no_wait = true)
     if NATS.statuscode(msg) == 404
-        # TODO: remove consumer?
         return nothing
     end
     key = replace(msg.subject, "\$KV.$(kv.bucket)." => "")
@@ -209,7 +220,7 @@ IteratorSize(::Base.KeySet{String, KeyValue{T}}) where {T} = Base.SizeUnknown()
 IteratorSize(::Base.ValueIterator{JetStream.KeyValue{T}}) where {T} = Base.SizeUnknown()
 
 function iterate(kv::KeyValue, (consumer, unique_keys))
-    msg = next(connection(kv), consumer, no_wait = true)
+    msg = consumer_next(connection(kv), consumer, no_wait = true)
     if NATS.statuscode(msg) == 404
         return nothing
     end
@@ -235,8 +246,8 @@ function length(kv::KeyValue)
     consumer_config = ConsumerConfiguration(
         name = randstring(20)
     )
-    consumer = create(connection(kv), consumer_config, "KV_$(kv.bucket)")
-    msg = next(connection(kv), consumer, no_wait = true)
+    consumer = consumer_create(connection(kv), consumer_config, "KV_$(kv.bucket)")
+    msg = consumer_next(connection(kv), consumer, no_wait = true)
     if NATS.statuscode(msg) == 404
         0
     else
@@ -255,10 +266,6 @@ end
 
 function history(kv::KeyValue, key::String)::Vector{KeyValueEntry}
 
-end
-
-function bucket(kv::KeyValue)
-    kv.bucket
 end
 
 function kv_status()

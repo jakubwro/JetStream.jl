@@ -1,18 +1,11 @@
 import Base.convert
 
-# function convert(::Type{ConsumerInfo}, msg::NATS.Msg)
-#     response  = JSON3.read(NATS.payload(msg))
-#     if haskey(response, :error)
-#         throw(JSON3.read(JSON3.write(response.error), ApiError))
-#     end
-#     JSON3.read(NATS.payload(msg), ConsumerInfo)
-# end
-
-const api_type_map = Dict(
-    "io.nats.jetstream.api.v1.consumer_create_response" => ConsumerInfo,
-    "io.nats.jetstream.api.v1.stream_create_response" => StreamInfo,
-    "io.nats.jetstream.api.v1.stream_delete_response" => ApiResult
-)
+# const api_type_map = Dict(
+#     "io.nats.jetstream.api.v1.consumer_create_response" => ConsumerInfo,
+#     "io.nats.jetstream.api.v1.stream_create_response" => StreamInfo,
+#     "io.nats.jetstream.api.v1.stream_delete_response" => ApiResult,
+#     "io.nats.jetstream.api.v1.stream_info_response" => StreamInfo
+# )
 
 function convert(::Type{T}, msg::NATS.Msg) where { T <: ApiResponse }
     # TODO: check headers
@@ -21,10 +14,7 @@ function convert(::Type{T}, msg::NATS.Msg) where { T <: ApiResponse }
         err = StructTypes.constructfrom(ApiError, response.error)
         throw(err)
     end
-    type = get(api_type_map, response.type, nothing)
-    isnothing(type) && error("Conversion not defined for `$(response.error)`")
-    type = api_type_map[response.type]
-    StructTypes.constructfrom(type, response)
+    StructTypes.constructfrom(T, response)
 end
 
 function convert(::Type{Union{T, ApiError}}, msg::NATS.Msg) where { T <: ApiResponse }
@@ -36,10 +26,7 @@ function convert(::Type{Union{T, ApiError}}, msg::NATS.Msg) where { T <: ApiResp
     if haskey(response, :error)
         StructTypes.constructfrom(ApiError, response.error)
     else
-        type = get(api_type_map, response.type, nothing)
-        isnothing(type) && error("Conversion not defined for `$(response.type)`")
-        type = api_type_map[response.type]
-        StructTypes.constructfrom(type, response)
+        StructTypes.constructfrom(T, response)
     end
 end
 
@@ -48,6 +35,7 @@ function convert(::Type{KeyValueEntry}, msg::NATS.Msg)
     bucket = splitted[3]
     key = msg.subject
     value = NATS.payload(msg)
+    _, _, stream, cons, _, seq, _, nanos, rem = splitted
     seq = splitted[7]
     revision = splitted[6]
 

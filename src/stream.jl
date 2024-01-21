@@ -118,9 +118,11 @@ end
 
 function msg_get(connection::NATS.Connection, stream::StreamInfo, subject)
     if stream.config.allow_direct
-        replies = NATS.request(connection, 1, "\$JS.API.DIRECT.GET.$stream_name.$subject", nothing)
+        replies = NATS.request(connection, 1, "\$JS.API.DIRECT.GET.$(stream.config.name)", "{\"last_by_subj\": \"$subject\"}")
         isempty(replies) && error("No replies.")
-        first(replies)
+        m = first(replies)
+        @show NATS.headers(m) m.subject m.reply_to
+        m
     else
         replies = NATS.request(connection, "\$JS.API.STREAM.MSG.GET.$stream_name", "{\"last_by_subj\": \"\$KV.asdf.$subject\"}", 1)
         isempty(replies) && error("No replies.")

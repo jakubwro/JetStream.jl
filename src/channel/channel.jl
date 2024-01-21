@@ -2,6 +2,12 @@
 
 const CHANNEL_STREAM_PREFIX = "JLCH"
 
+struct JetChannel{T} <: AbstractChannel{T}
+    connection::NATS.Connection
+    name::String
+    stream::Stream
+end
+
 struct JetStreamChannel{T} <: AbstractChannel{T}
     connection::NATS.Connection
     name::String

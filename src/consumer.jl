@@ -35,13 +35,13 @@ function next(connection::NATS.Connection, stream::String, consumer::String; no_
     # end 
 end
 
-function next(connection::NATS.Connection, consumer::ConsumerInfo; no_wait = false, timer = Timer(DEFAULT_NEXT_TIMEOUT_SECONDS))
-    req = "{\"no_wait\": $no_wait}"
-    msgs = NATS.request(connection, 1, "\$JS.API.CONSUMER.MSG.NEXT.$(consumer.stream_name).$(consumer.name)", req; timer)
-    if isempty(msgs)
-        error("No replies.")
-    end
-    msg = only(msgs)
+function next(connection::NATS.Connection, consumer::ConsumerInfo; no_wait = false, timer = Timer(DEFAULT_NEXT_TIMEOUT_SECONDS), batch = 1)
+    subject = "\$JS.API.CONSUMER.MSG.NEXT.$(consumer.stream_name).$(consumer.name)"
+    req = "{\"no_wait\": true, \"batch\": $batch }"
+    msgs = NATS.request(connection, batch, subject, req; timer)
+    isempty(msgs) && error("No replies.")
+    msg = first(msgs)
+    # @show msg.reply_to
     msg
 end
 

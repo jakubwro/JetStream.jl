@@ -24,5 +24,5 @@ end
 if have_nats()
     include("stream.jl")
     include("keyvalue.jl")
-    include("worker.jl")
+    # include("worker.jl")
 end

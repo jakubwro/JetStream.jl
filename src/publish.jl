@@ -5,7 +5,7 @@ function _try_request(subject, data; connection)
     only(replies)
 end
 
-function publish_with_ack(connection::NATS.Connection, subject, data; delays = [1,1,1])
+function stream_publish(connection::NATS.Connection, subject, data; delays = [1,1,1])
     ack_msg = _try_request(subject, data; connection)
     if NATS.statuscode(ack_msg) == 503
         for delay in delays
